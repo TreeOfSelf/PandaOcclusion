@@ -1,0 +1,28 @@
+{
+	"required": true,
+	"package": "me.TreeOfSelf.PandaOcclusion.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"BlockStateBaseMixin",
+		"ClientboundLevelChunkPacketDataMixin",
+		"ClientboundLevelChunkWithLightPacketMixin",
+		"ChunkMapMixin",
+		"ClientboundSectionBlocksUpdatePacketAccessor",
+		"LevelChunkMixin",
+		"LevelMixin",
+		"LivingEntityMixin",
+		"LevelChunkSectionMixin",
+		"PlayerChunkSenderInvoker",
+		"PlayerChunkSenderMixin",
+		"ServerCommonPacketListenerImplMixin",
+		"ServerGamePacketListenerImplMixin",
+		"ServerLevelMixin",
+		"ServerPlayerMixin",
+		"TrackedEntityMixin",
+		"WitherBossAccessor",
+		"WitherBossMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
