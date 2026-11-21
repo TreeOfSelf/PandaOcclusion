@@ -54,7 +54,7 @@ public class PandaOcclusionConfig {
 		public int bedrockBlocksPerTick = 16384;
 		public int bedrockBlocksPerTickTotal = 65536;
 		// auto mode: above this many changed blocks the whole column is resent
-		public int autoColumnBlocks = 400;
+		public int autoColumnBlocks = 100;
 		public List<String> keepHiddenUntilExposed = new ArrayList<>(List.of(
 			"copper_ore", "deepslate_copper_ore", "raw_copper_block", "diamond_ore", "deepslate_diamond_ore", "gold_ore",
 			"deepslate_gold_ore", "iron_ore", "deepslate_iron_ore", "raw_iron_block", "lapis_ore", "deepslate_lapis_ore",
@@ -80,8 +80,8 @@ public class PandaOcclusionConfig {
 		public double fineSightDistance = 48;
 		public boolean hideSurfaceWhenDeep = true;
 		public boolean bedrockHideSurfaceWhenDeep = false;
-		public boolean alwaysSendSurface = false;
-		public boolean hiddenSkyAsStone = false;
+		public boolean alwaysSendSurface = true;
+		public boolean hiddenSkyAsStone = true;
 		public boolean hiddenAsAir = false;
 		public double deepSurfaceDistance = 12;
 		public int deepPathSections = 4;

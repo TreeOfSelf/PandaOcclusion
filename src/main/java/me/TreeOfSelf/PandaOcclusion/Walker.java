@@ -504,10 +504,13 @@ final class Walker {
 		System.arraycopy(sightPoints, 0, targets, 0, sightPoints.length);
 		System.arraycopy(cameraPoints, 0, targets, sightPoints.length, cameraPoints.length);
 		it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<SectionPockets> found = new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>();
+		int[][] skyTops = new int[layer][];
 		for (int column = 0; column < layer && PandaOcclusionConfig.config.hideSealedPockets; column++) {
 			if (columns[column] == null) continue;
 			long mask = view.columnMask[column];
-			if (skipSurface && view.surfaceMask != null) mask &= ~view.surfaceMask[column];
+			// The surface band goes out real without a walk, but sealed rooms in it (bases dug in just under the ground)
+			// are still hidden: a group only counts as out of sight when no ray from the eye reaches it.
+			if (skipSurface && view.surfaceMask != null) mask |= view.surfaceMask[column];
 			while (mask != 0) {
 				int y = Long.numberOfTrailingZeros(mask);
 				mask &= mask - 1;
@@ -531,7 +534,13 @@ final class Walker {
 				Occlusion.STATS.pocketSections.increment();
 				SectionPockets result;
 				try {
-					result = sectionPockets(section, column, y, minX, minY, minZ, targets);
+					// In the surface band, air open to the sky is terrain anyone can fly over: never hidden, no rays needed
+					int[] skyTop = null;
+					if (skipSurface && view.surfaceMask != null && (view.surfaceMask[column] >> y & 1L) != 0) {
+						if (skyTops[column] == null) skyTops[column] = skyTops(columns[column]);
+						skyTop = skyTops[column];
+					}
+					result = sectionPockets(section, column, y, minX, minY, minZ, targets, skyTop);
 				} catch (RuntimeException e) {
 					continue;
 				}
@@ -700,7 +709,24 @@ final class Walker {
 		return false;
 	}
 
-	private SectionPockets sectionPockets(LevelChunkSection section, int column, int y, int minX, int minY, int minZ, Vec3[] targets) {
+	// Top block y per x,z (index x | z << 4); cells above it are open to the sky
+	private static int[] skyTops(LevelChunk chunk) {
+		int[] tops = new int[256];
+		for (int i = 0; i < 256; i++) tops[i] = chunk.getHeight(net.minecraft.world.level.levelgen.Heightmap.Types.WORLD_SURFACE, i & 15, i >> 4);
+		return tops;
+	}
+
+	private static boolean openToSky(long[] cells, int minY, int[] skyTop) {
+		for (int word = 0; word < 64; word++) {
+			for (long left = cells[word]; left != 0; left &= left - 1) {
+				int bit = word << 6 | Long.numberOfTrailingZeros(left);
+				if (minY + (bit >> 8) > skyTop[bit & 255]) return true;
+			}
+		}
+		return false;
+	}
+
+	private SectionPockets sectionPockets(LevelChunkSection section, int column, int y, int minX, int minY, int minZ, Vec3[] targets, int[] skyTop) {
 		long labelStart = System.nanoTime();
 		SectionGroups groups = SectionGroups.of(section);
 		if (groups == null) return null;
@@ -731,6 +757,7 @@ final class Walker {
 		boolean any = false;
 		for (long word : enclosed) any |= word != 0;
 		for (int g = 0; g < count; g++) {
+			if (!visible[g] && skyTop != null && openToSky(groups.cells[g], minY, skyTop)) visible[g] = true;
 			if (!visible[g]) visible[g] = groupInSight(column, y, minX, minY, minZ, groups.faces[g], targets);
 			if (!visible[g]) any = true;
 		}
