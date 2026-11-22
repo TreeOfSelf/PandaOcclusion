@@ -33,6 +33,16 @@ public abstract class TrackedEntityMixin implements HiddenTracking {
 	protected abstract int getEffectiveRange();
 
 	@Override
+	public Entity panda$entity() {
+		return entity;
+	}
+
+	@Override
+	public boolean panda$seenBy(ServerPlayer player) {
+		return seenBy.contains(player.connection);
+	}
+
+	@Override
 	public boolean panda$hiddenByOcclusion(ServerPlayer player) {
 		if (seenBy.contains(player.connection) || player.level() != entity.level()) return false;
 		ChunkMap chunkMap = ((ServerLevel) entity.level()).getChunkSource().chunkMap;

@@ -40,6 +40,15 @@ public class PandaOcclusionConfig {
 		public boolean entityLineOfSight = true;
 		public int entityLineOfSightInterval = 4;
 		public double entityLineOfSightRange = 128;
+		// mob line of sight runs on worker threads; the server thread only applies verdicts that changed (false = old inline raycasts)
+		public boolean asyncEntitySight = true;
+		public int sightThreads = 2;
+		// per player per batch, nearest first; past this, far mobs keep their last verdict (never seen = hidden)
+		public int entitySightMaxPerBatch = 768;
+		// mobs whose boxes round to the same half block share one answer per batch (mob farms)
+		public boolean entitySightCluster = true;
+		// server thread time per tick for mobs nobody has checked yet (they appear without waiting for a batch)
+		public double entitySightSyncBudgetMs = 1.0;
 		public boolean hideParticles = true;
 		public boolean hideSounds = false;
 		public boolean hiddenSounds = true;

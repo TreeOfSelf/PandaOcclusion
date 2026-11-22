@@ -71,6 +71,13 @@ public class PlayerOcclusion {
 	final it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap losOrigin = new it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap();
 	int originsVersion;
 	final Int2LongOpenHashMap losHidden = new Int2LongOpenHashMap();
+	// async entity line of sight: one batch in flight per player, result handed back by the worker
+boolean refreshedBypass;
+	long fullRefreshUntil = Long.MIN_VALUE / 2;
+	long lastFullRefresh = Long.MIN_VALUE / 2;
+		boolean sightBusy;
+	volatile EntitySight.Result sightDone;
+	long sightSubmitTick = Long.MIN_VALUE / 2;
 	long surfaceBoostUntil;
 	long lastWalkTick;
 	long lastPrefetchTick = Long.MIN_VALUE / 2;
@@ -110,6 +117,8 @@ public class PlayerOcclusion {
 		losSeen.clear();
 		losOrigin.clear();
 		losHidden.clear();
+		sightBusy = false;
+		sightDone = null;
 		origins = null;
 		cameraPoints = null;
 		lastPosition = null;
@@ -147,6 +156,12 @@ public class PlayerOcclusion {
 		return view == null ? 0L : view.shellMaskAt(chunkX, chunkZ);
 	}
 
+	boolean isSectionVisible(View in, int sectionX, int sectionY, int sectionZ) {
+		int y = sectionY - minSectionY;
+		if (y < 0 || y >= height) return true;
+		return in != null && (in.columnMaskAt(sectionX, sectionZ) >> y & 1L) != 0;
+	}
+
 	boolean isSectionVisible(int sectionX, int sectionY, int sectionZ) {
 		int y = sectionY - minSectionY;
 		if (y < 0 || y >= height) return true;
@@ -154,6 +169,10 @@ public class PlayerOcclusion {
 	}
 
 	boolean isBoxVisible(AABB box) {
+		return isBoxVisible(view, box);
+	}
+
+	boolean isBoxVisible(View in, AABB box) {
 		int minX = SectionPos.blockToSectionCoord(Mth.floor(box.minX - 0.5));
 		int minY = SectionPos.blockToSectionCoord(Mth.floor(box.minY - 0.5));
 		int minZ = SectionPos.blockToSectionCoord(Mth.floor(box.minZ - 0.5));
@@ -163,7 +182,7 @@ public class PlayerOcclusion {
 		for (int x = minX; x <= maxX; x++) {
 			for (int z = minZ; z <= maxZ; z++) {
 				for (int y = minY; y <= maxY; y++) {
-					if (isSectionVisible(x, y, z)) return true;
+					if (isSectionVisible(in, x, y, z)) return true;
 				}
 			}
 		}

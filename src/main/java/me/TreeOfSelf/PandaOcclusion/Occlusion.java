@@ -76,6 +76,7 @@ public final class Occlusion {
 		public long raycastsSkipped;
 		public long raycastNanos;
 		public long entityRefreshNanos;
+		public long entityRefreshSparse;
 		public long bytesSaved;
 		public long revealBytes;
 		public long lateReveals;
@@ -150,7 +151,7 @@ public final class Occlusion {
 			oreFarSections.reset();
 			oreReveals = 0;
 			pocketSectionsSent = pocketBlocksSent = pocketReveals = pocketServerNanos = digReveals = digWalks = 0;
-			reveals = chunksSent = chunksHeld = sectionsHidden = packetsDropped = raycasts = raycastsSkipped = raycastNanos = entityRefreshNanos = bytesSaved = revealBytes = lateReveals = columnResends = repeatResends = autoColumns = bedrockBlockChanges = bedrockBlocksDeferred = bedrockMaxBehindTicks = bedrockTotalLimited = 0; java.util.Arrays.fill(bedrockChangesBySection, 0); bedrockTotalLimited = lightBytesSkipped = hiddenSounds = hiddenSoundNanos = hiddenSoundSamples = hiddenSoundHits = 0;
+			reveals = chunksSent = chunksHeld = sectionsHidden = packetsDropped = raycasts = raycastsSkipped = raycastNanos = entityRefreshNanos = entityRefreshSparse = bytesSaved = revealBytes = lateReveals = columnResends = repeatResends = autoColumns = bedrockBlockChanges = bedrockBlocksDeferred = bedrockMaxBehindTicks = bedrockTotalLimited = 0; java.util.Arrays.fill(bedrockChangesBySection, 0); bedrockTotalLimited = lightBytesSkipped = hiddenSounds = hiddenSoundNanos = hiddenSoundSamples = hiddenSoundHits = 0;
 			java.util.Arrays.fill(revealDistance, 0);
 		}
 	}
@@ -203,13 +204,15 @@ public final class Occlusion {
 			adopt(player, state);
 
 			LongOpenHashSet dirty = DIRTY.get(state.level);
-			if (dirty != null && !state.losHidden.isEmpty()) {
+			if (dirty != null && (!state.losHidden.isEmpty() || EntitySight.enabled())) {
 				double range = PandaOcclusionConfig.config.entityLineOfSightRange + 16;
 				for (long section : dirty) {
 					double dx = SectionPos.sectionToBlockCoord(SectionPos.x(section), 8) - position.x;
 					double dz = SectionPos.sectionToBlockCoord(SectionPos.z(section), 8) - position.z;
 					if (dx * dx + dz * dz < range * range) {
 						state.losHidden.clear();
+						// a wall opened or closed in range: don't wait for the next batch
+						state.sightSubmitTick = Long.MIN_VALUE / 2;
 						break;
 					}
 				}
@@ -238,7 +241,9 @@ public final class Occlusion {
 				refreshPlayers(player, state);
 			}
 			int entityInterval = entityInterval(state);
-			if (PandaOcclusionConfig.config.hideEntities && PandaOcclusionConfig.config.entityLineOfSight
+			if (EntitySight.enabled()) {
+				EntitySight.tick(player, state, tick, entityInterval);
+			} else if (PandaOcclusionConfig.config.hideEntities && PandaOcclusionConfig.config.entityLineOfSight
 				&& (tick + player.getId()) % entityInterval == 0) {
 				refreshNearbyEntities(player, state);
 			}
@@ -400,9 +405,10 @@ public final class Occlusion {
 		if (PandaOcclusionConfig.config.debugDeep && (state.view == null || state.view.deep != view.deep)) {
 			PandaOcclusion.LOGGER.info("{} at y {}: surface {}", player.getName().getString(), String.format("%.1f", view.eye.y), view.deepReason);
 		}
+		View old = state.view;
 		state.view = view;
 		state.revealPending = true;
-		refreshEntities(player, state);
+		refreshEntities(player, state, old);
 	}
 
 	public static void onTeleport(ServerPlayer player) {
@@ -419,6 +425,8 @@ public final class Occlusion {
 		}
 		state.teleportSerial = WALK_SERIAL.get();
 		state.teleportPending = true;
+		// chunks (and vanilla's tracking of what is in them) arrive over the next ticks: re-ask about everything meanwhile
+		state.fullRefreshUntil = server.getTickCount() + 40;
 		state.dirty = true;
 		requestWalk(player, state);
 	}
@@ -959,10 +967,36 @@ public final class Occlusion {
 	}
 
 	static void refreshEntities(ServerPlayer player, PlayerOcclusion state) {
+		refreshEntities(player, state, null);
+	}
+
+	// A new view only changes which sections are visible: re-ask vanilla only about entities whose sections flipped
+	// (everything when there was no view before, or bypass changed). Line of sight changes come from the sight batches.
+	static void refreshEntities(ServerPlayer player, PlayerOcclusion state, View old) {
 		if (!PandaOcclusionConfig.config.hideEntities) return;
 		long start = System.nanoTime();
 		ChunkMap chunkMap = state.level.getChunkSource().chunkMap;
+		long tick = server.getTickCount();
+		// sparse only between full passes: a full one after a teleport/dimension change, and at least once a second,
+		// catches what section flips miss (vanilla tracking a chunk late, a hidden wither's boss bar)
+		boolean full = old == null || state.refreshedBypass != state.bypass || tick <= state.fullRefreshUntil
+			|| tick - state.lastFullRefresh >= 20;
+		state.refreshedBypass = state.bypass;
+		if (full) state.lastFullRefresh = tick;
+		View now = state.view;
+		// vanilla never tracks past the view distance (horizontal): don't even look at entities beyond it
+		double reach = (server.getPlayerList().getViewDistance() + 1) * 16.0;
+		double reachSqr = reach * reach;
+		double px = player.getX(), pz = player.getZ();
 		for (ChunkMap.TrackedEntity tracked : chunkMap.entityMap.values()) {
+			if (!full) {
+				Entity entity = ((HiddenTracking) tracked).panda$entity();
+				double ex = entity.getX() - px, ez = entity.getZ() - pz;
+				if (ex * ex + ez * ez > reachSqr) continue;
+				AABB box = entity.getBoundingBox();
+				if (state.isBoxVisible(old, box) == state.isBoxVisible(now, box)) continue;
+				STATS.entityRefreshSparse++;
+			}
 			tracked.updatePlayer(player);
 		}
 		STATS.entityRefreshNanos += System.nanoTime() - start;
@@ -1053,6 +1087,7 @@ public final class Occlusion {
 		}
 		// projectiles are too quick to wait for a check
 		if (PandaOcclusionConfig.config.entityLineOfSight && !(entity instanceof Projectile)) {
+			if (EntitySight.enabled()) return EntitySight.verdict(player, state, entity, server.getTickCount());
 			return lineOfSight(player, state, entity, entityInterval(player, state, entity));
 		}
 		return true;

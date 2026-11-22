@@ -34,6 +34,7 @@ public class PandaOcclusion implements ModInitializer {
 				.then(Commands.literal("stats").executes(PandaOcclusion::stats))
 				.then(Commands.literal("resetstats").executes(context -> {
 					Occlusion.STATS.reset();
+					EntitySight.STATS.reset();
 					context.getSource().sendSuccess(() -> Component.literal("Occlusion stats reset"), false);
 					return 1;
 				}))
@@ -50,6 +51,14 @@ public class PandaOcclusion implements ModInitializer {
 						context.getSource().sendSuccess(() -> Component.literal(text), false);
 						return 1;
 					}))))
+				.then(Commands.literal("raytest").then(Commands.argument("rays", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 1000000))
+					.executes(context -> {
+						ServerPlayer player = context.getSource().getPlayerOrException();
+						String text = LineOfSight.selfTest((net.minecraft.server.level.ServerLevel) player.level(), player.getEyePosition(),
+							com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(context, "rays"));
+						context.getSource().sendSuccess(() -> Component.literal(text), false);
+						return 1;
+					})))
 				.then(Commands.literal("bench").then(Commands.argument("player", net.minecraft.commands.arguments.EntityArgument.player())
 					.executes(context -> {
 						ServerPlayer target = net.minecraft.commands.arguments.EntityArgument.getPlayer(context, "player");
@@ -114,7 +123,8 @@ public class PandaOcclusion implements ModInitializer {
 			s.pocketSections.sum(), s.pocketNanos.sum() / 1e6, s.pocketLabelNanos.sum() / 1e6, s.pocketRayNanos.sum() / 1e6, s.pocketRays.sum(), s.pocketSightRays.sum(), s.pocketCameraRays.sum(), s.pocketSectionsSent, s.pocketBlocksSent, s.pocketReveals, s.pocketServerNanos / 1e6,
 			s.oreChecks.sum(), s.oreNanos.sum() / 1e6, s.oreRayNanos.sum() / 1e6, s.oreRays.sum(), s.oresHidden.sum(), s.oreFarSections.sum(), s.oreReveals,
 			java.util.Arrays.toString(s.revealDistance), java.util.Arrays.toString(s.bedrockChangesBySection));
-		context.getSource().sendSuccess(() -> Component.literal(text), false);
+		String sight = EntitySight.statsLine() + String.format(" | view-change entity refreshes %d", s.entityRefreshSparse);
+		context.getSource().sendSuccess(() -> Component.literal(text + "\n" + sight), false);
 		return 1;
 	}
 
