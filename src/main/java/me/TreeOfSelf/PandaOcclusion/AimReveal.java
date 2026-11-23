@@ -42,6 +42,9 @@ final class AimReveal {
 		if (LEFT_CLICK == null || !PandaOcclusionConfig.config.revealAroundAim || player.isSpectator() || state.bypass) return;
 		Vec3 eye = player.getEyePosition();
 		Vec3 end = eye.add(player.getViewVector(1.0F).scale(player.blockInteractionRange()));
+		// clip() loads every chunk it crosses and blocks the server thread until they exist. Right after a
+		// player arrives (portal, login, pearl, fast elytra) their own chunk often isn't ready yet: skip until it is.
+		if (!allLoaded(player.level(), eye, end)) return;
 		BlockHitResult hit = player.level().clip(new ClipContext(eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
 		if (hit.getType() != HitResult.Type.BLOCK) return;
 		BlockPos pos = hit.getBlockPos();
@@ -54,5 +57,14 @@ final class AimReveal {
 		} catch (Throwable t) {
 			PandaOcclusion.LOGGER.warn("revealAroundAim failed", t);
 		}
+	}
+
+	private static boolean allLoaded(Level level, Vec3 a, Vec3 b) {
+		int x0 = net.minecraft.util.Mth.floor(Math.min(a.x, b.x)) >> 4, x1 = net.minecraft.util.Mth.floor(Math.max(a.x, b.x)) >> 4;
+		int z0 = net.minecraft.util.Mth.floor(Math.min(a.z, b.z)) >> 4, z1 = net.minecraft.util.Mth.floor(Math.max(a.z, b.z)) >> 4;
+		for (int x = x0; x <= x1; x++)
+			for (int z = z0; z <= z1; z++)
+				if (level.getChunkSource().getChunkNow(x, z) == null) return false;
+		return true;
 	}
 }

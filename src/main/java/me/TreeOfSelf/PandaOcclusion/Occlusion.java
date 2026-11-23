@@ -989,10 +989,14 @@ public final class Occlusion {
 		double reachSqr = reach * reach;
 		double px = player.getX(), pz = player.getZ();
 		for (ChunkMap.TrackedEntity tracked : chunkMap.entityMap.values()) {
+			HiddenTracking hidden = (HiddenTracking) tracked;
+			Entity entity = hidden.panda$entity();
+			double ex = entity.getX() - px, ez = entity.getZ() - pz;
+			// Past view distance there's nothing to show or hide. A full pass still re-asks about anything the
+			// player is tracked to now, so it can drop; vanilla handles the rest when the player or entity moves.
+			// (Without this, every player re-asked about every entity in the dimension once a second.)
+			if (ex * ex + ez * ez > reachSqr && !(full && hidden.panda$seenBy(player))) continue;
 			if (!full) {
-				Entity entity = ((HiddenTracking) tracked).panda$entity();
-				double ex = entity.getX() - px, ez = entity.getZ() - pz;
-				if (ex * ex + ez * ez > reachSqr) continue;
 				AABB box = entity.getBoundingBox();
 				if (state.isBoxVisible(old, box) == state.isBoxVisible(now, box)) continue;
 				STATS.entityRefreshSparse++;
